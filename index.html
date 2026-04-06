@@ -355,7 +355,7 @@ function spawnBoss() {
     x: canvas.width + 20,
     y: canvas.height * 0.3,
     width: 160, height: 100,
-    hp: 40, maxHp: 40,
+    hp: 25, maxHp: 25,
     speed: 1,
     phase: 'enter', // enter, fight, dying
     targetY: canvas.height * 0.3,
@@ -895,20 +895,22 @@ function updateBoss() {
   const bdy = boss.targetY - boss.y;
   boss.y += bdy * 0.03;
 
-  // Boss shoots
+  // Boss shoots in bursts: 3 shots, then 2-second pause
   boss.shootTimer++;
-  if (boss.shootTimer > 40) {
-    boss.shootTimer = 0;
+  const burstCycle = 180; // full cycle: 3 shots + pause
+  const cyclePos = boss.shootTimer % burstCycle;
+  // Shoot at frames 0, 45, 90 of cycle, then pause from 91-179
+  if (cyclePos === 0 || cyclePos === 45 || cyclePos === 90) {
     bossBullets.push({
       x: boss.x - 10,
       y: boss.y + boss.height / 2 - 4,
       width: 16, height: 8,
-      speed: 5,
+      speed: 4,
     });
     // Spread shot at lower HP
     if (boss.hp < boss.maxHp * 0.5) {
-      bossBullets.push({ x: boss.x - 10, y: boss.y + boss.height * 0.3, width: 12, height: 6, speed: 4.5 });
-      bossBullets.push({ x: boss.x - 10, y: boss.y + boss.height * 0.7, width: 12, height: 6, speed: 4.5 });
+      bossBullets.push({ x: boss.x - 10, y: boss.y + boss.height * 0.3, width: 12, height: 6, speed: 3.5 });
+      bossBullets.push({ x: boss.x - 10, y: boss.y + boss.height * 0.7, width: 12, height: 6, speed: 3.5 });
     }
   }
 
@@ -1387,13 +1389,6 @@ function drawEnemy(e) {
     ctx.lineTo(e.x - 2, cy + Math.sin(e.propAngle) * 7);
     ctx.stroke();
   }
-
-  // White outline for visibility
-  ctx.strokeStyle = '#fff';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.rect(e.x - 1, e.y - 1, e.width + 2, e.height + 2);
-  ctx.stroke();
 
   // Googly eyes
   const eyeX = e.x + e.width * 0.18;
