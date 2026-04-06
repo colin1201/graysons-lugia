@@ -267,7 +267,7 @@ function stopBGM() {
 // ============================================================
 // GAME STATE
 // ============================================================
-const STATE = { TITLE: 0, PLAYING: 1, LEVEL_TRANSITION: 2, BOSS: 3, GAMEOVER: 4, WIN: 5 };
+const STATE = { TITLE: 0, PLAYING: 1, LEVEL_TRANSITION: 2, BOSS: 3, GAMEOVER: 4, WIN: 5, TUTORIAL: 6 };
 let gameState = STATE.TITLE;
 let score = 0;
 let lives = 3;
@@ -275,6 +275,22 @@ let highScore = parseInt(localStorage.getItem('graysonsLugiaHighScore2') || '0')
 let level = 1;
 let killsThisLevel = 0;
 let totalFrame = 0;
+let firstPlay = !localStorage.getItem('graysonsLugiaTutorialSeen');
+
+// Smart adaptive difficulty
+let recentDeaths = 0;       // deaths in last 30 seconds
+let lastDeathTime = 0;      // frame of last death
+let difficultyEase = 0;     // 0 = normal, higher = easier (max 0.6)
+
+function getAdaptiveMult() {
+  // Decay recentDeaths over time
+  if (totalFrame - lastDeathTime > 1800) recentDeaths = 0; // 30s at 60fps
+  // If died twice quickly, ease up
+  if (recentDeaths >= 2) difficultyEase = Math.min(0.6, difficultyEase + 0.01);
+  // If doing well (no deaths for 20s), slowly ramp back
+  else if (totalFrame - lastDeathTime > 1200 && difficultyEase > 0) difficultyEase = Math.max(0, difficultyEase - 0.002);
+  return 1 - difficultyEase; // multiplier: 1.0 = normal, 0.4 = easiest
+}
 
 // Level definitions
 const LEVELS = {
@@ -313,11 +329,11 @@ let enemies = [];
 
 // Enemy drawing types
 const PLANE_STYLES = {
-  fighter: { color: '#e74c3c', accent: '#c0392b' },
-  bomber: { color: '#e67e22', accent: '#d35400' },
-  jet: { color: '#8e44ad', accent: '#6c3483' },
-  helicopter: { color: '#27ae60', accent: '#1e8449' },
-  stealth: { color: '#2c3e50', accent: '#1a252f' },
+  fighter: { color: '#ff5555', accent: '#cc3333' },
+  bomber: { color: '#ff9933', accent: '#dd7711' },
+  jet: { color: '#bb66ff', accent: '#9944dd' },
+  helicopter: { color: '#44dd66', accent: '#22bb44' },
+  stealth: { color: '#6688aa', accent: '#446688' },
 };
 
 const ENEMY_TYPES = [
@@ -458,6 +474,9 @@ let milestoneText = '', milestoneTimer = 0;
 // --- Level transition ---
 let transitionTimer = 0;
 
+// --- Tutorial ---
+let tutorialTimer = 0;
+
 // ============================================================
 // INPUT — D-pad buttons + drag fallback
 // ============================================================
@@ -509,6 +528,7 @@ function handleTouchMove(tx, ty) {
 canvas.addEventListener('touchstart', (e) => {
   e.preventDefault(); ensureAudio();
   if (gameState === STATE.TITLE) { startGame(); return; }
+  if (gameState === STATE.TUTORIAL) { if (tutorialTimer > 60) { launchGame(); } return; }
   if (gameState === STATE.GAMEOVER || gameState === STATE.WIN) { startGame(); return; }
 
   // Buttons only — check all touches
@@ -547,6 +567,7 @@ canvas.addEventListener('touchend', (e) => {
 canvas.addEventListener('mousedown', (e) => {
   ensureAudio();
   if (gameState === STATE.TITLE) { startGame(); return; }
+  if (gameState === STATE.TUTORIAL) { if (tutorialTimer > 60) { launchGame(); } return; }
   if (gameState === STATE.GAMEOVER || gameState === STATE.WIN) { startGame(); return; }
   if (handleTouchStart(e.clientX, e.clientY)) return;
   touching = true;
@@ -563,6 +584,13 @@ canvas.addEventListener('mouseup', () => { touching = false; btnUp = false; btnD
 // GAME FLOW
 // ============================================================
 function startGame() {
+  if (firstPlay) {
+    firstPlay = false;
+    localStorage.setItem('graysonsLugiaTutorialSeen', '1');
+    gameState = STATE.TUTORIAL;
+    tutorialTimer = 0;
+    return;
+  }
   gameState = STATE.PLAYING;
   score = 0; lives = 3; level = 1; killsThisLevel = 0; totalFrame = 0;
   combo = 0; comboTimer = 0;
@@ -571,6 +599,23 @@ function startGame() {
   boss = null; bossWarningTimer = 0;
   shakeAmount = 0;
   milestoneText = ''; milestoneTimer = 0;
+  recentDeaths = 0; lastDeathTime = 0; difficultyEase = 0;
+  player.rapidFireTimer = 0; player.shieldTimer = 0; player.bigShotTimer = 0;
+  resetPlayer();
+  initParallax();
+  startBGM();
+}
+
+function launchGame() {
+  gameState = STATE.PLAYING;
+  score = 0; lives = 3; level = 1; killsThisLevel = 0; totalFrame = 0;
+  combo = 0; comboTimer = 0;
+  bullets = []; enemies = []; particles = []; confetti = [];
+  powerups = []; stars = []; bossBullets = [];
+  boss = null; bossWarningTimer = 0;
+  shakeAmount = 0;
+  milestoneText = ''; milestoneTimer = 0;
+  recentDeaths = 0; lastDeathTime = 0; difficultyEase = 0;
   player.rapidFireTimer = 0; player.shieldTimer = 0; player.bigShotTimer = 0;
   resetPlayer();
   initParallax();
@@ -600,6 +645,8 @@ function loseLife() {
     return;
   }
   lives--;
+  recentDeaths++;
+  lastDeathTime = totalFrame;
   playHit();
   triggerShake(15);
   spawnFireExplosion(player.x + player.width / 2, player.y + player.height / 2, 25);
@@ -627,6 +674,11 @@ function winGame() {
 // ============================================================
 function update() {
   totalFrame++;
+
+  if (gameState === STATE.TUTORIAL) {
+    tutorialTimer++;
+    return;
+  }
 
   if (gameState === STATE.LEVEL_TRANSITION) {
     transitionTimer--;
@@ -697,11 +749,13 @@ function update() {
   }
 
   // --- Normal PLAYING mode ---
-  // Progressive difficulty within level
+  // Progressive difficulty within level, softened by adaptive ease
+  const adaptMult = getAdaptiveMult();
   const progressMult = 1 + (killsThisLevel / lvl.killsNeeded) * 0.3;
+  const effectiveMax = Math.max(1, Math.round(lvl.maxEnemies * adaptMult));
 
   // Spawn enemies
-  if (enemies.length < lvl.maxEnemies && Math.random() < lvl.spawnRate * progressMult) {
+  if (enemies.length < effectiveMax && Math.random() < lvl.spawnRate * progressMult * adaptMult) {
     const available = level === 1 ? ENEMY_TYPES.slice(0, 3) :
                       level === 2 ? ENEMY_TYPES.slice(0, 4) : ENEMY_TYPES;
     const type = available[Math.floor(Math.random() * available.length)];
@@ -710,7 +764,7 @@ function update() {
       y: 30 + Math.random() * (canvas.height - 100),
       width: type.width, height: type.height,
       hp: type.hp, maxHp: type.hp,
-      speed: type.speed * lvl.speedMult * (0.9 + progressMult * 0.1),
+      speed: type.speed * lvl.speedMult * (0.9 + progressMult * 0.1) * adaptMult,
       style: type.style, points: type.points,
       wobble: Math.random() * Math.PI * 2,
       wobbleSpeed: 0.02 + Math.random() * 0.03,
@@ -983,7 +1037,11 @@ function getPlayerHitbox() {
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+  // Landscape prompt overlay (check on every frame)
+  if (window.innerHeight > window.innerWidth) { drawLandscapePrompt(); return; }
+
   if (gameState === STATE.TITLE) { drawTitle(); return; }
+  if (gameState === STATE.TUTORIAL) { drawTutorial(); return; }
   if (gameState === STATE.GAMEOVER) { drawGameOverScreen(); return; }
   if (gameState === STATE.WIN) { drawWinScreen(); return; }
 
@@ -1326,6 +1384,27 @@ function drawEnemy(e) {
     ctx.lineTo(e.x - 2, cy + Math.sin(e.propAngle) * 7);
     ctx.stroke();
   }
+
+  // White outline for visibility
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.rect(e.x - 1, e.y - 1, e.width + 2, e.height + 2);
+  ctx.stroke();
+
+  // Googly eyes
+  const eyeX = e.x + e.width * 0.18;
+  const eyeY = cy - e.height * 0.1;
+  const eyeR = Math.min(e.width, e.height) * 0.14;
+  // White
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(eyeX, eyeY, eyeR, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(eyeX, eyeY + eyeR * 1.3, eyeR * 0.8, 0, Math.PI * 2); ctx.fill();
+  // Pupils (look toward player)
+  ctx.fillStyle = '#000';
+  const pupilOff = eyeR * 0.3;
+  ctx.beginPath(); ctx.arc(eyeX - pupilOff, eyeY, eyeR * 0.5, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(eyeX - pupilOff, eyeY + eyeR * 1.3, eyeR * 0.4, 0, Math.PI * 2); ctx.fill();
 
   // HP bar
   if (e.maxHp > 1) {
@@ -1684,6 +1763,139 @@ function drawWinScreen() {
   ctx.strokeText('TAP TO PLAY AGAIN', canvas.width / 2, canvas.height * 0.93);
   ctx.fillText('TAP TO PLAY AGAIN', canvas.width / 2, canvas.height * 0.93);
   ctx.globalAlpha = 1;
+}
+
+// ============================================================
+// LANDSCAPE PROMPT + TUTORIAL
+// ============================================================
+function drawLandscapePrompt() {
+  const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  grad.addColorStop(0, '#1a1a3e'); grad.addColorStop(1, '#2d4a7a');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.textAlign = 'center';
+  const iconSize = Math.min(canvas.width * 0.2, 80);
+
+  // Animated rotating phone icon
+  ctx.save();
+  ctx.translate(canvas.width / 2, canvas.height * 0.38);
+  const wobble = Math.sin(Date.now() * 0.003) * 0.3;
+  ctx.rotate(wobble);
+  // Phone body
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
+  ctx.beginPath();
+  roundRect(-iconSize * 0.3, -iconSize * 0.5, iconSize * 0.6, iconSize, 8);
+  ctx.stroke();
+  // Home button
+  ctx.beginPath();
+  ctx.arc(0, iconSize * 0.38, 4, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+
+  // Arrow showing rotation
+  ctx.fillStyle = '#ffd700';
+  ctx.font = `bold ${Math.min(canvas.width * 0.1, 40)}px Arial`;
+  ctx.fillText('\u21BB', canvas.width / 2 + iconSize * 0.5, canvas.height * 0.38);
+
+  const textSize = Math.min(canvas.width * 0.06, 24);
+  ctx.font = `bold ${textSize}px Arial`;
+  ctx.fillStyle = '#fff';
+  ctx.fillText('Turn your phone sideways', canvas.width / 2, canvas.height * 0.62);
+  ctx.fillText('to play!', canvas.width / 2, canvas.height * 0.62 + textSize * 1.5);
+}
+
+function drawTutorial() {
+  // Dark background
+  const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  grad.addColorStop(0, '#1a1a3e'); grad.addColorStop(1, '#0f3460');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.textAlign = 'center';
+  const titleSize = Math.min(canvas.width * 0.07, 36);
+
+  // Title
+  ctx.font = `bold ${titleSize}px "Arial Rounded MT Bold", Arial, sans-serif`;
+  ctx.fillStyle = '#ffd700'; ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
+  ctx.strokeText('HOW TO PLAY', canvas.width / 2, canvas.height * 0.12);
+  ctx.fillText('HOW TO PLAY', canvas.width / 2, canvas.height * 0.12);
+
+  const instrSize = Math.min(canvas.width * 0.04, 20);
+  ctx.font = `bold ${instrSize}px Arial`;
+  ctx.fillStyle = '#fff';
+
+  // Draw animated arrow buttons demo (left side)
+  const demoX = canvas.width * 0.25;
+  const demoY = canvas.height * 0.45;
+  const dBtnSize = 50;
+
+  // Animated press (alternating up/down)
+  const pressing = Math.floor(Date.now() / 800) % 2 === 0 ? 'up' : 'down';
+
+  // Up button
+  ctx.globalAlpha = pressing === 'up' ? 0.9 : 0.4;
+  ctx.fillStyle = pressing === 'up' ? '#fff' : '#ccc';
+  ctx.beginPath();
+  roundRect(demoX - dBtnSize / 2, demoY - dBtnSize - 6, dBtnSize, dBtnSize, 10);
+  ctx.fill();
+  ctx.fillStyle = pressing === 'up' ? '#222' : '#555';
+  ctx.beginPath();
+  ctx.moveTo(demoX, demoY - dBtnSize + 6);
+  ctx.lineTo(demoX + dBtnSize / 2 - 10, demoY - 16);
+  ctx.lineTo(demoX - dBtnSize / 2 + 10, demoY - 16);
+  ctx.closePath(); ctx.fill();
+
+  // Down button
+  ctx.globalAlpha = pressing === 'down' ? 0.9 : 0.4;
+  ctx.fillStyle = pressing === 'down' ? '#fff' : '#ccc';
+  ctx.beginPath();
+  roundRect(demoX - dBtnSize / 2, demoY + 6, dBtnSize, dBtnSize, 10);
+  ctx.fill();
+  ctx.fillStyle = pressing === 'down' ? '#222' : '#555';
+  ctx.beginPath();
+  ctx.moveTo(demoX, demoY + dBtnSize - 4);
+  ctx.lineTo(demoX + dBtnSize / 2 - 10, demoY + 16);
+  ctx.lineTo(demoX - dBtnSize / 2 + 10, demoY + 16);
+  ctx.closePath(); ctx.fill();
+  ctx.globalAlpha = 1;
+
+  // Animated hand/finger pointing
+  const handY = pressing === 'up' ? demoY - dBtnSize / 2 - 6 : demoY + dBtnSize / 2 + 6;
+  ctx.font = `${Math.min(canvas.width * 0.08, 36)}px Arial`;
+  ctx.fillStyle = '#fff';
+  ctx.textAlign = 'center';
+  ctx.fillText('\u261D', demoX + dBtnSize / 2 + 20, handY + 10);
+
+  // Instructions text (right side)
+  ctx.textAlign = 'left';
+  ctx.font = `bold ${instrSize}px Arial`;
+  ctx.fillStyle = '#fff';
+  const textX = canvas.width * 0.45;
+
+  ctx.fillText('Press the arrows', textX, canvas.height * 0.35);
+  ctx.fillText('to move Lugia up and down', textX, canvas.height * 0.35 + instrSize * 1.6);
+
+  ctx.fillStyle = '#7ec8e3';
+  ctx.fillText('Lugia shoots automatically!', textX, canvas.height * 0.35 + instrSize * 3.8);
+
+  ctx.fillStyle = '#ffd700';
+  ctx.fillText('Collect stars and power-ups!', textX, canvas.height * 0.35 + instrSize * 5.4);
+
+  ctx.fillStyle = '#e74c3c';
+  ctx.fillText('Dodge the enemy planes!', textX, canvas.height * 0.35 + instrSize * 7);
+
+  // Tap to continue (pulsing)
+  if (tutorialTimer > 60) {
+    const pulse = 0.6 + Math.sin(Date.now() / 400) * 0.4;
+    ctx.globalAlpha = pulse;
+    ctx.textAlign = 'center';
+    const startSize = Math.min(canvas.width * 0.05, 24);
+    ctx.font = `bold ${startSize}px Arial`;
+    ctx.fillStyle = '#fff';
+    ctx.fillText('TAP TO PLAY!', canvas.width / 2, canvas.height * 0.92);
+    ctx.globalAlpha = 1;
+  }
 }
 
 // ============================================================
