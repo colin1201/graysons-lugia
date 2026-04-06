@@ -455,43 +455,117 @@ let milestoneText = '', milestoneTimer = 0;
 let transitionTimer = 0;
 
 // ============================================================
-// INPUT
+// INPUT — D-pad buttons + drag fallback
 // ============================================================
 let touching = false;
+let btnUp = false;
+let btnDown = false;
+const MOVE_SPEED = 6; // pixels per frame when holding button
+const BTN_SIZE = 56;
+const BTN_GAP = 12;
+const BTN_MARGIN = 16;
 
-function getEventY(e) {
-  if (e.touches && e.touches.length > 0) return e.touches[0].clientY;
-  return e.clientY;
+function getBtnUpRect() {
+  return {
+    x: BTN_MARGIN,
+    y: canvas.height - BTN_MARGIN - BTN_SIZE * 2 - BTN_GAP,
+    w: BTN_SIZE, h: BTN_SIZE,
+  };
+}
+function getBtnDownRect() {
+  return {
+    x: BTN_MARGIN,
+    y: canvas.height - BTN_MARGIN - BTN_SIZE,
+    w: BTN_SIZE, h: BTN_SIZE,
+  };
+}
+
+function pointInRect(px, py, r) {
+  // Generous hit area (1.3x) for small fingers
+  const pad = r.w * 0.3;
+  return px >= r.x - pad && px <= r.x + r.w + pad &&
+         py >= r.y - pad && py <= r.y + r.h + pad;
+}
+
+function handleTouchStart(tx, ty) {
+  const up = getBtnUpRect();
+  const down = getBtnDownRect();
+  if (pointInRect(tx, ty, up)) { btnUp = true; return true; }
+  if (pointInRect(tx, ty, down)) { btnDown = true; return true; }
+  return false;
+}
+
+function handleTouchMove(tx, ty) {
+  const up = getBtnUpRect();
+  const down = getBtnDownRect();
+  btnUp = pointInRect(tx, ty, up);
+  btnDown = pointInRect(tx, ty, down);
 }
 
 canvas.addEventListener('touchstart', (e) => {
   e.preventDefault(); ensureAudio();
   if (gameState === STATE.TITLE) { startGame(); return; }
   if (gameState === STATE.GAMEOVER || gameState === STATE.WIN) { startGame(); return; }
-  touching = true;
-  player.targetY = getEventY(e);
+
+  // Check all touches for button presses
+  let onButton = false;
+  for (let i = 0; i < e.touches.length; i++) {
+    if (handleTouchStart(e.touches[i].clientX, e.touches[i].clientY)) onButton = true;
+  }
+  if (!onButton) {
+    touching = true;
+    player.targetY = e.touches[0].clientY;
+  }
 }, { passive: false });
 
 canvas.addEventListener('touchmove', (e) => {
   e.preventDefault();
-  if (gameState === STATE.PLAYING || gameState === STATE.BOSS) {
-    player.targetY = getEventY(e);
+  if (gameState !== STATE.PLAYING && gameState !== STATE.BOSS) return;
+
+  // Reset buttons, re-check all active touches
+  btnUp = false; btnDown = false;
+  let anyOnButton = false;
+  for (let i = 0; i < e.touches.length; i++) {
+    const tx = e.touches[i].clientX;
+    const ty = e.touches[i].clientY;
+    const up = getBtnUpRect();
+    const down = getBtnDownRect();
+    if (pointInRect(tx, ty, up)) { btnUp = true; anyOnButton = true; }
+    if (pointInRect(tx, ty, down)) { btnDown = true; anyOnButton = true; }
+    if (!anyOnButton) player.targetY = ty;
   }
 }, { passive: false });
 
-canvas.addEventListener('touchend', (e) => { e.preventDefault(); touching = false; }, { passive: false });
+canvas.addEventListener('touchend', (e) => {
+  e.preventDefault();
+  // Re-evaluate remaining touches
+  btnUp = false; btnDown = false;
+  touching = false;
+  for (let i = 0; i < e.touches.length; i++) {
+    const tx = e.touches[i].clientX;
+    const ty = e.touches[i].clientY;
+    const up = getBtnUpRect();
+    const down = getBtnDownRect();
+    if (pointInRect(tx, ty, up)) btnUp = true;
+    if (pointInRect(tx, ty, down)) btnDown = true;
+  }
+}, { passive: false });
 
+// Mouse fallback for desktop testing
 canvas.addEventListener('mousedown', (e) => {
   ensureAudio();
   if (gameState === STATE.TITLE) { startGame(); return; }
   if (gameState === STATE.GAMEOVER || gameState === STATE.WIN) { startGame(); return; }
+  if (handleTouchStart(e.clientX, e.clientY)) return;
   touching = true;
   player.targetY = e.clientY;
 });
 canvas.addEventListener('mousemove', (e) => {
-  if (touching && (gameState === STATE.PLAYING || gameState === STATE.BOSS)) player.targetY = e.clientY;
+  if (gameState !== STATE.PLAYING && gameState !== STATE.BOSS) return;
+  if (btnUp || btnDown) { handleTouchMove(e.clientX, e.clientY); return; }
+  if (touching) player.targetY = e.clientY;
 });
-canvas.addEventListener('mouseup', () => { touching = false; });
+canvas.addEventListener('mouseup', () => { touching = false; btnUp = false; btnDown = false; });
 
 // ============================================================
 // GAME FLOW
@@ -573,9 +647,17 @@ function update() {
 
   const lvl = LEVELS[level];
 
-  // Player movement — follows finger position directly
-  const dy = player.targetY - player.y;
-  player.y += dy * 0.15;
+  // Player movement — buttons take priority, drag as fallback
+  if (btnUp) {
+    player.y -= MOVE_SPEED;
+    player.targetY = player.y;
+  } else if (btnDown) {
+    player.y += MOVE_SPEED;
+    player.targetY = player.y;
+  } else {
+    const dy = player.targetY - player.y;
+    player.y += dy * 0.15;
+  }
   player.y = Math.max(10, Math.min(canvas.height - player.height - 10, player.y));
 
   if (player.invincibleTimer > 0) player.invincibleTimer--;
@@ -1412,6 +1494,58 @@ function drawHUD() {
     ctx.restore();
     ctx.globalAlpha = 1;
   }
+
+  // D-pad buttons (bottom-left)
+  drawDpadButtons();
+}
+
+function drawDpadButtons() {
+  const up = getBtnUpRect();
+  const down = getBtnDownRect();
+
+  // Up button
+  ctx.globalAlpha = btnUp ? 0.9 : 0.45;
+  ctx.fillStyle = btnUp ? '#fff' : '#ccc';
+  ctx.beginPath();
+  roundRect(up.x, up.y, up.w, up.h, 12);
+  ctx.fill();
+  // Arrow
+  ctx.fillStyle = btnUp ? '#222' : '#555';
+  ctx.beginPath();
+  ctx.moveTo(up.x + up.w / 2, up.y + 12);
+  ctx.lineTo(up.x + up.w - 12, up.y + up.h - 12);
+  ctx.lineTo(up.x + 12, up.y + up.h - 12);
+  ctx.closePath();
+  ctx.fill();
+
+  // Down button
+  ctx.globalAlpha = btnDown ? 0.9 : 0.45;
+  ctx.fillStyle = btnDown ? '#fff' : '#ccc';
+  ctx.beginPath();
+  roundRect(down.x, down.y, down.w, down.h, 12);
+  ctx.fill();
+  // Arrow
+  ctx.fillStyle = btnDown ? '#222' : '#555';
+  ctx.beginPath();
+  ctx.moveTo(down.x + down.w / 2, down.y + down.h - 12);
+  ctx.lineTo(down.x + down.w - 12, down.y + 12);
+  ctx.lineTo(down.x + 12, down.y + 12);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.globalAlpha = 1;
+}
+
+function roundRect(x, y, w, h, r) {
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
 }
 
 function drawLevelTransition() {
