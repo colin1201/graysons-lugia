@@ -354,6 +354,7 @@ const POWERUP_TYPES = [
   { type: 'rapid', color: '#f39c12', label: 'R', duration: 300 },
   { type: 'shield', color: '#3498db', label: 'S', duration: 360 },
   { type: 'big', color: '#e74c3c', label: 'B', duration: 240 },
+  { type: 'life', color: '#e74c3c', label: '\u2764', duration: 0 },
 ];
 
 // --- Stars ---
@@ -737,9 +738,11 @@ function update() {
     if (e.x + e.width < -20) enemies.splice(i, 1);
   }
 
-  // Spawn power-ups
+  // Spawn power-ups (life is rarer — only when below 3 lives)
   if (Math.random() < 0.002) {
-    const type = POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)];
+    let pool = POWERUP_TYPES;
+    if (lives >= 3) pool = POWERUP_TYPES.filter(p => p.type !== 'life');
+    const type = pool[Math.floor(Math.random() * pool.length)];
     powerups.push({
       x: canvas.width + 10,
       y: 50 + Math.random() * (canvas.height - 120),
@@ -926,6 +929,7 @@ function updatePowerups() {
       if (p.type === 'rapid') player.rapidFireTimer = p.duration;
       else if (p.type === 'shield') player.shieldTimer = p.duration;
       else if (p.type === 'big') player.bigShotTimer = p.duration;
+      else if (p.type === 'life') { lives = Math.min(lives + 1, 5); }
       playPowerUp();
       powerups.splice(i, 1);
     }
