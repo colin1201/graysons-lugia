@@ -29,9 +29,11 @@ canvas {
 <canvas id="game"></canvas>
 <script>
 // ============================================================
-// GRAYSON'S LUGIA — Side-Scrolling Shooter v2
-// 3 Levels + Boss Fight + Power-ups + Star Collectibles
+// POKEMON SIDE-SCROLLER — Shared Engine v3
 // ============================================================
+
+// --- GAME CONFIG (injected by build) ---
+const CFG = {"gameTitle":"Grayson's Lugia","playerName":"Grayson","pokemonName":"Lugia","attackName":"Aeroblast","attackColor":"#88ccff","storageKey":"graysonsLugia","attack":{"glow":"#4488ff","trail":"rgba(68,136,255,0.3)","core":"#88ccff","center":"#ccddff"},"bigAttack":{"glow":"#ff8800","trail":"rgba(255,136,0,0.3)","core":"#ffcc44","center":"#fff"}};
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -45,7 +47,7 @@ window.addEventListener('resize', resize);
 
 // --- Asset loading ---
 const playerImg = new Image();
-playerImg.src = 'grayson-lugia.png?v=3';
+playerImg.src = 'player.png?v=4';
 let assetsLoaded = false;
 playerImg.onload = () => { assetsLoaded = true; };
 
@@ -293,11 +295,11 @@ const STATE = { TITLE: 0, PLAYING: 1, LEVEL_TRANSITION: 2, BOSS: 3, GAMEOVER: 4,
 let gameState = STATE.TITLE;
 let score = 0;
 let lives = 3;
-let highScore = parseInt(localStorage.getItem('graysonsLugiaHighScore2') || '0');
+let highScore = parseInt(localStorage.getItem(CFG.storageKey + '_hs') || '0');
 let level = 1;
 let killsThisLevel = 0;
 let totalFrame = 0;
-let firstPlay = !localStorage.getItem('graysonsLugiaTutorialSeen');
+let firstPlay = !localStorage.getItem(CFG.storageKey + '_tut');
 
 // Smart adaptive difficulty
 let recentDeaths = 0;       // deaths in last 30 seconds
@@ -608,7 +610,7 @@ canvas.addEventListener('mouseup', () => { touching = false; btnUp = false; btnD
 function startGame() {
   if (firstPlay) {
     firstPlay = false;
-    localStorage.setItem('graysonsLugiaTutorialSeen', '1');
+    localStorage.setItem(CFG.storageKey + '_tut', '1');
     gameState = STATE.TUTORIAL;
     tutorialTimer = 0;
     return;
@@ -675,7 +677,7 @@ function loseLife() {
   if (lives <= 0) {
     gameState = STATE.GAMEOVER;
     stopBGM();
-    if (score > highScore) { highScore = score; localStorage.setItem('graysonsLugiaHighScore2', String(highScore)); }
+    if (score > highScore) { highScore = score; localStorage.setItem(CFG.storageKey + '_hs', String(highScore)); }
     playGameOver();
     setTimeout(() => { playCelebration(); spawnConfetti(); }, 800);
   } else {
@@ -686,7 +688,7 @@ function loseLife() {
 function winGame() {
   gameState = STATE.WIN;
   stopBGM();
-  if (score > highScore) { highScore = score; localStorage.setItem('graysonsLugiaHighScore2', String(highScore)); }
+  if (score > highScore) { highScore = score; localStorage.setItem(CFG.storageKey + '_hs', String(highScore)); }
   playCelebration();
   spawnConfetti();
 }
@@ -1116,8 +1118,8 @@ function drawTitle() {
   ctx.lineWidth = 4;
   const titleSize = Math.min(canvas.width * 0.1, 54);
   ctx.font = `bold ${titleSize}px "Arial Rounded MT Bold", Arial, sans-serif`;
-  ctx.strokeText("Grayson's Lugia", canvas.width / 2, canvas.height * 0.14);
-  ctx.fillText("Grayson's Lugia", canvas.width / 2, canvas.height * 0.14);
+  ctx.strokeText(CFG.gameTitle, canvas.width / 2, canvas.height * 0.14);
+  ctx.fillText(CFG.gameTitle, canvas.width / 2, canvas.height * 0.14);
 
   const pulse = 0.7 + Math.sin(Date.now() / 400) * 0.3;
   ctx.globalAlpha = pulse;
@@ -1241,17 +1243,18 @@ function drawGameWorld() {
     ctx.fillText(p.label, p.x + p.width / 2, p.y + p.height / 2 + bobY + 5);
   });
 
-  // Bullets (Aeroblast)
+  // Bullets (attack)
   bullets.forEach(b => {
     const cx = b.x + b.width / 2;
     const cy = b.y + b.height / 2;
     const r = b.big ? b.width / 2 + 2 : b.width / 2;
+    const atk = b.big ? CFG.bigAttack : CFG.attack;
     // Outer glow
-    ctx.shadowColor = b.big ? '#ff8800' : '#4488ff';
+    ctx.shadowColor = atk.glow;
     ctx.shadowBlur = b.big ? 15 : 10;
     // Swirl trail
     const swirl = totalFrame * 0.15;
-    ctx.fillStyle = b.big ? 'rgba(255,136,0,0.3)' : 'rgba(68,136,255,0.3)';
+    ctx.fillStyle = atk.trail;
     ctx.beginPath();
     ctx.ellipse(cx - 6, cy + Math.sin(swirl) * 3, r * 0.7, r * 0.5, 0, 0, Math.PI * 2);
     ctx.fill();
@@ -1259,12 +1262,12 @@ function drawGameWorld() {
     ctx.ellipse(cx - 12, cy + Math.cos(swirl) * 3, r * 0.5, r * 0.3, 0, 0, Math.PI * 2);
     ctx.fill();
     // Core
-    ctx.fillStyle = b.big ? '#ffcc44' : '#88ccff';
+    ctx.fillStyle = atk.core;
     ctx.beginPath();
     ctx.ellipse(cx, cy, r, b.height / 2, 0, 0, Math.PI * 2);
     ctx.fill();
     // Bright center
-    ctx.fillStyle = b.big ? '#fff' : '#ccddff';
+    ctx.fillStyle = atk.center;
     ctx.beginPath();
     ctx.ellipse(cx, cy, r * 0.4, b.height / 3, 0, 0, Math.PI * 2);
     ctx.fill();
@@ -1763,8 +1766,8 @@ function drawGameOverScreen() {
   ctx.fillStyle = '#ffd700'; ctx.strokeStyle = '#000'; ctx.lineWidth = 4;
   ctx.strokeText('GREAT EFFORT', canvas.width / 2, canvas.height * 0.3);
   ctx.fillText('GREAT EFFORT', canvas.width / 2, canvas.height * 0.3);
-  ctx.strokeText('GRAYSON!', canvas.width / 2, canvas.height * 0.3 + titleSize * 1.2);
-  ctx.fillText('GRAYSON!', canvas.width / 2, canvas.height * 0.3 + titleSize * 1.2);
+  ctx.strokeText(CFG.playerName.toUpperCase() + '!', canvas.width / 2, canvas.height * 0.3 + titleSize * 1.2);
+  ctx.fillText(CFG.playerName.toUpperCase() + '!', canvas.width / 2, canvas.height * 0.3 + titleSize * 1.2);
 
   const scoreSize = Math.min(canvas.width * 0.06, 28);
   ctx.font = `bold ${scoreSize}px Arial`;
@@ -1810,8 +1813,8 @@ function drawWinScreen() {
   ctx.font = `bold ${subSize}px "Arial Rounded MT Bold", Arial, sans-serif`;
   ctx.strokeText('AMAZING JOB', canvas.width / 2, canvas.height * 0.25 + titleSize * 1.3);
   ctx.fillText('AMAZING JOB', canvas.width / 2, canvas.height * 0.25 + titleSize * 1.3);
-  ctx.strokeText('GRAYSON!', canvas.width / 2, canvas.height * 0.25 + titleSize * 2.4);
-  ctx.fillText('GRAYSON!', canvas.width / 2, canvas.height * 0.25 + titleSize * 2.4);
+  ctx.strokeText(CFG.playerName.toUpperCase() + '!', canvas.width / 2, canvas.height * 0.25 + titleSize * 2.4);
+  ctx.fillText(CFG.playerName.toUpperCase() + '!', canvas.width / 2, canvas.height * 0.25 + titleSize * 2.4);
 
   if (assetsLoaded) {
     const imgAspect = playerImg.width / playerImg.height;
@@ -1950,10 +1953,10 @@ function drawTutorial() {
   const textX = canvas.width * 0.45;
 
   ctx.fillText('Press the arrows', textX, canvas.height * 0.35);
-  ctx.fillText('to move Lugia up and down', textX, canvas.height * 0.35 + instrSize * 1.6);
+  ctx.fillText('to move ' + CFG.pokemonName + ' up and down', textX, canvas.height * 0.35 + instrSize * 1.6);
 
-  ctx.fillStyle = '#88ccff';
-  ctx.fillText('Lugia uses Aeroblast!', textX, canvas.height * 0.35 + instrSize * 3.8);
+  ctx.fillStyle = CFG.attackColor;
+  ctx.fillText(CFG.pokemonName + ' uses ' + CFG.attackName + '!', textX, canvas.height * 0.35 + instrSize * 3.8);
 
   ctx.fillStyle = '#ffd700';
   ctx.fillText('Catch Poke Balls for points!', textX, canvas.height * 0.35 + instrSize * 5.4);
