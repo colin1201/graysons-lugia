@@ -1038,7 +1038,10 @@ function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   // Landscape prompt overlay (check on every frame)
-  if (window.innerHeight > window.innerWidth) { drawLandscapePrompt(); return; }
+  const isPortrait = (screen.orientation && screen.orientation.type.includes('portrait')) ||
+                     window.innerHeight > window.innerWidth * 1.1 ||
+                     canvas.height > canvas.width * 1.1;
+  if (isPortrait) { drawLandscapePrompt(); return; }
 
   if (gameState === STATE.TITLE) { drawTitle(); return; }
   if (gameState === STATE.TUTORIAL) { drawTutorial(); return; }
