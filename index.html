@@ -141,15 +141,18 @@ function playPowerUp() {
 
 function playStarCollect() {
   ensureAudio();
-  const osc = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
-  osc.connect(gain); gain.connect(audioCtx.destination);
-  osc.type = 'sine';
-  osc.frequency.setValueAtTime(1200, audioCtx.currentTime);
-  osc.frequency.exponentialRampToValueAtTime(1600, audioCtx.currentTime + 0.1);
-  gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.15);
-  osc.start(); osc.stop(audioCtx.currentTime + 0.15);
+  // Poke Ball catch sound — two rising tones
+  [880, 1175].forEach((freq, i) => {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.type = 'square';
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.1, audioCtx.currentTime + i * 0.08);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + i * 0.08 + 0.12);
+    osc.start(audioCtx.currentTime + i * 0.08);
+    osc.stop(audioCtx.currentTime + i * 0.08 + 0.15);
+  });
 }
 
 function playLevelUp() {
@@ -215,11 +218,13 @@ function startBGM() {
   ensureAudio();
   bgmPlaying = true;
 
-  // Simple bass line loop
-  function playBassLoop() {
+  // Pokemon battle theme style
+  function playBattleLoop() {
     if (!bgmPlaying) return;
-    const bassNotes = [130, 165, 146, 130, 165, 196, 165, 146];
-    const noteLen = 0.25;
+    // Driving bass (Pokemon battle feel — fast, energetic)
+    const bassNotes = [165, 165, 196, 196, 220, 220, 196, 175,
+                       165, 165, 196, 196, 262, 247, 220, 196];
+    const noteLen = 0.15;
     const loopLen = bassNotes.length * noteLen;
     const now = audioCtx.currentTime;
 
@@ -229,16 +234,17 @@ function startBGM() {
       osc.connect(gain); gain.connect(audioCtx.destination);
       osc.type = 'triangle';
       osc.frequency.value = freq;
-      gain.gain.setValueAtTime(0.06, now + i * noteLen);
-      gain.gain.setValueAtTime(0.06, now + i * noteLen + noteLen * 0.8);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + i * noteLen + noteLen);
+      gain.gain.setValueAtTime(0.07, now + i * noteLen);
+      gain.gain.setValueAtTime(0.07, now + i * noteLen + noteLen * 0.6);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + i * noteLen + noteLen * 0.9);
       osc.start(now + i * noteLen);
       osc.stop(now + i * noteLen + noteLen);
       bgmNodes.push(osc);
     });
 
-    // Melody layer
-    const melodyNotes = [392, 0, 440, 0, 523, 0, 440, 392];
+    // Melody — energetic Pokemon-style
+    const melodyNotes = [523, 0, 587, 523, 494, 0, 440, 0,
+                         523, 0, 659, 587, 523, 494, 523, 0];
     melodyNotes.forEach((freq, i) => {
       if (freq === 0) return;
       const osc = audioCtx.createOscillator();
@@ -246,16 +252,32 @@ function startBGM() {
       osc.connect(gain); gain.connect(audioCtx.destination);
       osc.type = 'square';
       osc.frequency.value = freq;
-      gain.gain.setValueAtTime(0.03, now + i * noteLen);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + i * noteLen + noteLen * 0.9);
+      gain.gain.setValueAtTime(0.04, now + i * noteLen);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + i * noteLen + noteLen * 0.85);
       osc.start(now + i * noteLen);
       osc.stop(now + i * noteLen + noteLen);
       bgmNodes.push(osc);
     });
 
-    setTimeout(playBassLoop, loopLen * 1000 - 50);
+    // Rhythm percussion (noise hits on beats)
+    for (let i = 0; i < bassNotes.length; i += 2) {
+      const bufSize = audioCtx.sampleRate * 0.03;
+      const buf = audioCtx.createBuffer(1, bufSize, audioCtx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let j = 0; j < bufSize; j++) d[j] = (Math.random() * 2 - 1) * (1 - j / bufSize);
+      const src = audioCtx.createBufferSource();
+      src.buffer = buf;
+      const g = audioCtx.createGain();
+      g.gain.setValueAtTime(0.04, now + i * noteLen);
+      g.gain.exponentialRampToValueAtTime(0.001, now + i * noteLen + 0.03);
+      src.connect(g); g.connect(audioCtx.destination);
+      src.start(now + i * noteLen);
+      bgmNodes.push(src);
+    }
+
+    setTimeout(playBattleLoop, loopLen * 1000 - 50);
   }
-  playBassLoop();
+  playBattleLoop();
 }
 
 function stopBGM() {
@@ -294,11 +316,11 @@ function getAdaptiveMult() {
 
 // Level definitions
 const LEVELS = {
-  1: { name: 'Sky Patrol', killsNeeded: 15, maxEnemies: 3, spawnRate: 0.018, speedMult: 1.0,
+  1: { name: 'Route 1', killsNeeded: 15, maxEnemies: 3, spawnRate: 0.018, speedMult: 1.0,
        sky: ['#87CEEB', '#b0d4f1', '#2980b9'], ground: '#1a5276', groundWave: '#2471a3' },
-  2: { name: 'Ocean Storm', killsNeeded: 20, maxEnemies: 4, spawnRate: 0.022, speedMult: 1.3,
+  2: { name: 'Whirl Islands', killsNeeded: 20, maxEnemies: 4, spawnRate: 0.022, speedMult: 1.3,
        sky: ['#4a4a6a', '#6a6a8a', '#1a3a5a'], ground: '#0d2137', groundWave: '#1a3a5a' },
-  3: { name: 'Final Showdown', killsNeeded: 25, maxEnemies: 5, spawnRate: 0.025, speedMult: 1.6,
+  3: { name: 'Mt. Silver', killsNeeded: 25, maxEnemies: 5, spawnRate: 0.025, speedMult: 1.6,
        sky: ['#1a1a2e', '#16213e', '#0f3460'], ground: '#0a0a1a', groundWave: '#151530' },
 };
 
@@ -1158,12 +1180,49 @@ function drawGameWorld() {
     ctx.beginPath(); ctx.ellipse(c.x + c.width * 0.25, c.y + 3, c.width * 0.35, c.height * 0.35, 0, 0, Math.PI * 2); ctx.fill();
   });
 
-  // Stars (collectibles)
+  // Poke Balls (collectibles)
   stars.forEach(s => {
+    const cx = s.x + s.width / 2;
+    const cy = s.y + s.height / 2;
+    const r = s.width / 2;
     ctx.save();
-    ctx.translate(s.x + s.width / 2, s.y + s.height / 2);
+    ctx.translate(cx, cy);
     ctx.rotate(s.rotation);
-    drawStar(0, 0, 5, s.width / 2, s.width / 4, '#ffd700', '#ffaa00');
+    // Top half (red)
+    ctx.fillStyle = '#e74c3c';
+    ctx.beginPath();
+    ctx.arc(0, 0, r, Math.PI, 0);
+    ctx.closePath();
+    ctx.fill();
+    // Bottom half (white)
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI);
+    ctx.closePath();
+    ctx.fill();
+    // Black dividing line
+    ctx.strokeStyle = '#222';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-r, 0);
+    ctx.lineTo(r, 0);
+    ctx.stroke();
+    // Outer ring
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.stroke();
+    // Center button
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#222';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.fillStyle = '#ddd';
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.15, 0, Math.PI * 2);
+    ctx.fill();
     ctx.restore();
   });
 
@@ -1182,13 +1241,32 @@ function drawGameWorld() {
     ctx.fillText(p.label, p.x + p.width / 2, p.y + p.height / 2 + bobY + 5);
   });
 
-  // Bullets
+  // Bullets (Aeroblast)
   bullets.forEach(b => {
-    ctx.fillStyle = b.big ? '#ff6600' : '#7ec8e3';
-    ctx.shadowColor = b.big ? '#ff6600' : '#7ec8e3';
-    ctx.shadowBlur = b.big ? 12 : 8;
+    const cx = b.x + b.width / 2;
+    const cy = b.y + b.height / 2;
+    const r = b.big ? b.width / 2 + 2 : b.width / 2;
+    // Outer glow
+    ctx.shadowColor = b.big ? '#ff8800' : '#4488ff';
+    ctx.shadowBlur = b.big ? 15 : 10;
+    // Swirl trail
+    const swirl = totalFrame * 0.15;
+    ctx.fillStyle = b.big ? 'rgba(255,136,0,0.3)' : 'rgba(68,136,255,0.3)';
     ctx.beginPath();
-    ctx.ellipse(b.x + b.width / 2, b.y + b.height / 2, b.width / 2, b.height / 2, 0, 0, Math.PI * 2);
+    ctx.ellipse(cx - 6, cy + Math.sin(swirl) * 3, r * 0.7, r * 0.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(cx - 12, cy + Math.cos(swirl) * 3, r * 0.5, r * 0.3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Core
+    ctx.fillStyle = b.big ? '#ffcc44' : '#88ccff';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, r, b.height / 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Bright center
+    ctx.fillStyle = b.big ? '#fff' : '#ccddff';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, r * 0.4, b.height / 3, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.shadowBlur = 0;
   });
@@ -1874,14 +1952,14 @@ function drawTutorial() {
   ctx.fillText('Press the arrows', textX, canvas.height * 0.35);
   ctx.fillText('to move Lugia up and down', textX, canvas.height * 0.35 + instrSize * 1.6);
 
-  ctx.fillStyle = '#7ec8e3';
-  ctx.fillText('Lugia shoots automatically!', textX, canvas.height * 0.35 + instrSize * 3.8);
+  ctx.fillStyle = '#88ccff';
+  ctx.fillText('Lugia uses Aeroblast!', textX, canvas.height * 0.35 + instrSize * 3.8);
 
   ctx.fillStyle = '#ffd700';
-  ctx.fillText('Collect stars and power-ups!', textX, canvas.height * 0.35 + instrSize * 5.4);
+  ctx.fillText('Catch Poke Balls for points!', textX, canvas.height * 0.35 + instrSize * 5.4);
 
   ctx.fillStyle = '#e74c3c';
-  ctx.fillText('Dodge the enemy planes!', textX, canvas.height * 0.35 + instrSize * 7);
+  ctx.fillText('Dodge the wild Pokemon!', textX, canvas.height * 0.35 + instrSize * 7);
 
   // Tap to continue (pulsing)
   if (tutorialTimer > 60) {
