@@ -885,7 +885,7 @@ function updateBossBullets() {
   for (let i = bossBullets.length - 1; i >= 0; i--) {
     bossBullets[i].x -= bossBullets[i].speed;
     if (bossBullets[i].x < -20) { bossBullets.splice(i, 1); continue; }
-    if (player.invincibleTimer <= 0 && rectsOverlap(player, bossBullets[i])) {
+    if (player.invincibleTimer <= 0 && rectsOverlap(getPlayerHitbox(), bossBullets[i])) {
       bossBullets.splice(i, 1);
       loseLife();
     }
@@ -895,7 +895,7 @@ function updateBossBullets() {
 function updatePlayerCollisions() {
   if (player.invincibleTimer > 0) return;
   for (let j = enemies.length - 1; j >= 0; j--) {
-    if (rectsOverlap(player, enemies[j])) {
+    if (rectsOverlap(getPlayerHitbox(), enemies[j])) {
       const e = enemies[j];
       enemies.splice(j, 1);
       spawnFireExplosion(e.x + e.width / 2, e.y + e.height / 2, 20);
@@ -904,7 +904,7 @@ function updatePlayerCollisions() {
     }
   }
   // Boss body collision
-  if (boss && boss.phase === 'fight' && rectsOverlap(player, boss)) {
+  if (boss && boss.phase === 'fight' && rectsOverlap(getPlayerHitbox(), boss)) {
     loseLife();
   }
 }
@@ -965,6 +965,16 @@ function updateParallax() {
 function rectsOverlap(a, b) {
   return a.x < b.x + b.width && a.x + a.width > b.x &&
          a.y < b.y + b.height && a.y + a.height > b.y;
+}
+
+// Smaller hitbox for player — only the core body, not the full image
+function getPlayerHitbox() {
+  return {
+    x: player.x + player.width * 0.2,
+    y: player.y + player.height * 0.15,
+    width: player.width * 0.55,
+    height: player.height * 0.65,
+  };
 }
 
 // ============================================================
