@@ -511,14 +511,9 @@ canvas.addEventListener('touchstart', (e) => {
   if (gameState === STATE.TITLE) { startGame(); return; }
   if (gameState === STATE.GAMEOVER || gameState === STATE.WIN) { startGame(); return; }
 
-  // Check all touches for button presses
-  let onButton = false;
+  // Buttons only — check all touches
   for (let i = 0; i < e.touches.length; i++) {
-    if (handleTouchStart(e.touches[i].clientX, e.touches[i].clientY)) onButton = true;
-  }
-  if (!onButton) {
-    touching = true;
-    player.targetY = e.touches[0].clientY;
+    handleTouchStart(e.touches[i].clientX, e.touches[i].clientY);
   }
 }, { passive: false });
 
@@ -526,17 +521,13 @@ canvas.addEventListener('touchmove', (e) => {
   e.preventDefault();
   if (gameState !== STATE.PLAYING && gameState !== STATE.BOSS) return;
 
-  // Reset buttons, re-check all active touches
+  // Re-check all active touches against buttons
   btnUp = false; btnDown = false;
-  let anyOnButton = false;
   for (let i = 0; i < e.touches.length; i++) {
     const tx = e.touches[i].clientX;
     const ty = e.touches[i].clientY;
-    const up = getBtnUpRect();
-    const down = getBtnDownRect();
-    if (pointInRect(tx, ty, up)) { btnUp = true; anyOnButton = true; }
-    if (pointInRect(tx, ty, down)) { btnDown = true; anyOnButton = true; }
-    if (!anyOnButton) player.targetY = ty;
+    if (pointInRect(tx, ty, getBtnUpRect())) btnUp = true;
+    if (pointInRect(tx, ty, getBtnDownRect())) btnDown = true;
   }
 }, { passive: false });
 
@@ -544,14 +535,11 @@ canvas.addEventListener('touchend', (e) => {
   e.preventDefault();
   // Re-evaluate remaining touches
   btnUp = false; btnDown = false;
-  touching = false;
   for (let i = 0; i < e.touches.length; i++) {
     const tx = e.touches[i].clientX;
     const ty = e.touches[i].clientY;
-    const up = getBtnUpRect();
-    const down = getBtnDownRect();
-    if (pointInRect(tx, ty, up)) btnUp = true;
-    if (pointInRect(tx, ty, down)) btnDown = true;
+    if (pointInRect(tx, ty, getBtnUpRect())) btnUp = true;
+    if (pointInRect(tx, ty, getBtnDownRect())) btnDown = true;
   }
 }, { passive: false });
 
@@ -651,14 +639,13 @@ function update() {
 
   const lvl = LEVELS[level];
 
-  // Player movement — buttons take priority, drag as fallback
+  // Player movement — arrow buttons only (mouse drag kept for desktop testing)
   if (btnUp) {
     player.y -= MOVE_SPEED;
-    player.targetY = player.y;
   } else if (btnDown) {
     player.y += MOVE_SPEED;
-    player.targetY = player.y;
-  } else {
+  } else if (touching) {
+    // Mouse drag only (desktop testing)
     const dy = player.targetY - player.y;
     player.y += dy * 0.15;
   }
